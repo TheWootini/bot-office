@@ -77,3 +77,11 @@ When generating or editing stills and motion plates:
 - **2026-09-23** rembg sometimes eats white clipboard paper (hole when composited); prefer colored clipboard or prop-aware rembg pass.
 - **2026-09-23** Chromium often ignores VP9 WebM alpha in `<video>` (plates remain). Prefer **animated WebP with alpha** via `<img>` for stage playback; keep WebM as secondary.
 - **2026-09-23** Characters are `<button>`s — UA default white fill looked like cream plates even with transparent WebP. Set `appearance:none; background:transparent; border:none; padding:0` on `.char`.
+
+## 2026-09-24 — WebP ghost trails (dispose/blend)
+
+**Symptom:** Characters left a shadow/echo of prior poses while idling (breathing), walking, or transitioning — looked like frames stacking.
+
+**Cause:** `ffmpeg libwebp` wrote animated cutouts with ANMF `dispose: none` + `blend: yes`. Chromium `<img>` composites each frame over the previous canvas without clearing.
+
+**Fix:** Rewrite every animated cutout with `webpmux` frame flags `+duration+0+0+1-b` (dispose=background, blend=no). Script: `scripts/fix-webp-disposal.sh`. `make-cutouts.sh` runs it after each WebP encode. Verify with `webpmux -info file.webp` — every frame should show `background` / `no`.

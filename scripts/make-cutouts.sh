@@ -74,6 +74,9 @@ process_video() {
     echo "webp only → $dest_webp"
     ffmpeg -y -hide_banner -loglevel error -c:v libvpx-vp9 -i "$dest" \
       -loop 0 -c:v libwebp -q:v 70 "$dest_webp"
+    if command -v webpmux >/dev/null 2>&1; then
+      "$ROOT/scripts/fix-webp-disposal.sh" "$dest_webp"
+    fi
     echo "  wrote $dest_webp ($(du -h "$dest_webp" | cut -f1))"
     return 0
   fi
@@ -119,6 +122,12 @@ PY
   local dest_webp="$OUT/${id}-${state}.webp"
   ffmpeg -y -hide_banner -loglevel error -c:v libvpx-vp9 -i "$dest" \
     -loop 0 -c:v libwebp -q:v 70 "$dest_webp"
+  # ffmpeg writes dispose=none + blend=yes → ghost trails in Chromium <img>; fix flags
+  if command -v webpmux >/dev/null 2>&1; then
+    "$ROOT/scripts/fix-webp-disposal.sh" "$dest_webp"
+  else
+    echo "WARN: webpmux missing; cutout WebP may ghost (install webp package)" >&2
+  fi
   echo "  wrote $dest_webp ($(du -h "$dest_webp" | cut -f1))"
 
   rm -rf "$job"

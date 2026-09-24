@@ -420,6 +420,9 @@ function applyVisual(node, { force = false } = {}) {
       const settle = () => {
         if (token !== node.visualToken) return;
         if (from !== to) clearLayer(from);
+        // Belt-and-suspenders: never leave a second layer mounted
+        const idle = to === a ? b : a;
+        if (idle !== from) clearLayer(idle);
       };
       setTimeout(settle, CROSSFADE_MS + 40);
     });
