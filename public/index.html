@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Bot Office · Grok</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@500;600;700;800&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">⌂</span>
+        <div>
+          <h1>Bot Office</h1>
+          <p class="tagline">BookLooky HQ · cozy mode</p>
+        </div>
+      </div>
+      <div class="actions" role="toolbar" aria-label="Office actions">
+        <button type="button" class="btn" id="btn-wander" title="Everyone takes a stroll">Wander</button>
+        <button type="button" class="btn btn-primary" id="btn-desks" title="Everyone sit down">All to desks</button>
+        <button type="button" class="btn" id="btn-coffee" title="Coffee break">Coffee break</button>
+      </div>
+    </header>
+
+    <section class="meetbar" aria-label="Meet script">
+      <span class="meet-label">Meet</span>
+      <label class="meet-field">
+        <span class="sr-only">First character</span>
+        <select id="meet-a" class="meet-select"></select>
+      </label>
+      <span class="meet-x" aria-hidden="true">×</span>
+      <label class="meet-field">
+        <span class="sr-only">Second character</span>
+        <select id="meet-b" class="meet-select"></select>
+      </label>
+      <button type="button" class="btn btn-meet" id="btn-meet" title="Walk · talk · high-five · desks">Go meet</button>
+      <button type="button" class="btn btn-soft" id="btn-meet-quick" title="CEO meet CEO (F)">CEO meet CEO (F)</button>
+    </section>
+
+    <main class="stage-wrap">
+      <div class="stage" id="stage" aria-label="Office room">
+        <div class="room" id="room">
+          <img class="room-bg" id="room-bg" alt="Cozy office room" draggable="false" />
+          <div class="chars" id="chars"></div>
+        </div>
+      </div>
+      <p class="hint">Click a bot for a chat · drop stills/MP4s in <code>assets/</code> · see <code>CHARACTER-INTAKE.md</code></p>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+  <script src="/app.js" defer></script>
+</body>
+</html>
