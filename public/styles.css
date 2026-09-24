@@ -192,6 +192,16 @@ body {
   pointer-events: auto;
   cursor: pointer;
   z-index: 2;
+  /* Kill UA <button> plate (white/gray fill + border) */
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
   /* position is driven via left/top % with transition for walk */
   transition:
     left 2.4s var(--ease-soft),
@@ -233,6 +243,14 @@ body {
   animation: talk-bounce 0.9s ease-in-out infinite;
 }
 
+/* Facing flips .sprite only — nameplate stays upright */
+.char .sprite {
+  transition:
+    transform 280ms ease,
+    box-shadow 0.25s ease,
+    filter 0.25s ease;
+}
+
 .char.facing-left .sprite {
   transform: scaleX(-1);
 }
@@ -272,7 +290,45 @@ body {
     0 8px 18px rgba(58, 47, 42, 0.22),
     0 0 0 3px rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.35);
-  transition: box-shadow 0.25s ease, filter 0.25s ease;
+}
+
+/* Transparent cutouts: drop the cream plate framing */
+.sprite.is-cutout,
+.char.has-cutout .sprite {
+  border-radius: 0;
+  overflow: visible;
+  background: transparent;
+  box-shadow: none;
+  filter: drop-shadow(0 8px 14px rgba(58, 47, 42, 0.28));
+}
+
+/* Never let blob gradients show through once media is ready */
+.placeholder[hidden] {
+  display: none !important;
+}
+
+.sprite .layer {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  pointer-events: none;
+}
+
+.sprite .layer.is-active {
+  opacity: 1;
+}
+
+.sprite .layer img,
+.sprite .layer video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center bottom;
+  display: block;
+  background: transparent;
 }
 
 .char:hover .sprite,
@@ -282,6 +338,14 @@ body {
     0 0 0 3px rgba(255, 255, 255, 0.85),
     0 0 0 6px rgba(232, 160, 168, 0.35);
   filter: brightness(1.04);
+}
+
+.char:hover .sprite.is-cutout,
+.char:focus-visible .sprite.is-cutout,
+.char.has-cutout:hover .sprite,
+.char.has-cutout:focus-visible .sprite {
+  box-shadow: none;
+  filter: brightness(1.04) drop-shadow(0 10px 18px rgba(58, 47, 42, 0.32));
 }
 
 .char:focus-visible {
@@ -491,7 +555,9 @@ body {
 @media (prefers-reduced-motion: reduce) {
   .char,
   .char.is-walking,
-  .char.is-fast {
+  .char.is-fast,
+  .char .sprite,
+  .sprite .layer {
     transition-duration: 0.01ms !important;
   }
 
@@ -618,4 +684,10 @@ body {
   .char.is-celebrating .char-inner {
     animation: none !important;
   }
+}
+
+
+.char.has-cutout .nameplate {
+  background: rgba(255, 248, 240, 0.72);
+  box-shadow: 0 2px 8px rgba(58, 47, 42, 0.12);
 }

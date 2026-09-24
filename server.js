@@ -89,17 +89,60 @@ function firstExistingUrl(basename, exts) {
 }
 
 function assetMapFor(id) {
+  const cutoutDir = path.join(ASSETS, 'cutout');
+  // Prefer cutout still PNG, then non-cutout still jpg/png
+  const stillCutoutPng = path.join(cutoutDir, `${id}-still.png`);
+  const stillCutoutJpg = path.join(cutoutDir, `${id}-still.jpg`);
+  let still = null;
+  if (fs.existsSync(stillCutoutPng)) still = `/assets/cutout/${id}-still.png`;
+  else if (fs.existsSync(stillCutoutJpg)) still = `/assets/cutout/${id}-still.jpg`;
+  else still = firstExistingUrl(`${id}-still`, STILL_EXTS);
+
   const out = {
-    still: firstExistingUrl(`${id}-still`, STILL_EXTS),
+    still,
+    cutout: {},
   };
+
   for (const state of ANIM_STATES) {
+    // Prefer animated WebP (alpha in <img>), then WebM, then source MP4
+    const webp = path.join(cutoutDir, `${id}-${state}.webp`);
+    const webm = path.join(cutoutDir, `${id}-${state}.webm`);
     const mp4 = path.join(ASSETS, `${id}-${state}.mp4`);
-    out[state] = fs.existsSync(mp4) ? `/assets/${id}-${state}.mp4` : null;
+    if (fs.existsSync(webp)) {
+      const url = `/assets/cutout/${id}-${state}.webp`;
+      out[state] = url;
+      out.cutout[state] = url;
+    } else if (fs.existsSync(webm)) {
+      const url = `/assets/cutout/${id}-${state}.webm`;
+      out[state] = url;
+      out.cutout[state] = url;
+    } else if (fs.existsSync(mp4)) {
+      out[state] = `/assets/${id}-${state}.mp4`;
+    } else {
+      out[state] = null;
+    }
   }
+
+  if (fs.existsSync(stillCutoutPng)) {
+    out.cutout.still = `/assets/cutout/${id}-still.png`;
+  } else if (fs.existsSync(stillCutoutJpg)) {
+    out.cutout.still = `/assets/cutout/${id}-still.jpg`;
+  }
+
   // Back-compat: old sit.mp4 maps to work if work missing
   if (!out.work) {
+    const sitWebp = path.join(cutoutDir, `${id}-sit.webp`);
+    const sitCut = path.join(cutoutDir, `${id}-sit.webm`);
     const sit = path.join(ASSETS, `${id}-sit.mp4`);
-    if (fs.existsSync(sit)) out.work = `/assets/${id}-sit.mp4`;
+    if (fs.existsSync(sitWebp)) {
+      out.work = `/assets/cutout/${id}-sit.webp`;
+      out.cutout.work = out.work;
+    } else if (fs.existsSync(sitCut)) {
+      out.work = `/assets/cutout/${id}-sit.webm`;
+      out.cutout.work = out.work;
+    } else if (fs.existsSync(sit)) {
+      out.work = `/assets/${id}-sit.mp4`;
+    }
   }
   return out;
 }
@@ -115,7 +158,7 @@ function listAssets() {
   return { room, characters };
 }
 
-function serveFile(res, filePath) {
+function serveFile(req, res, filePath) {
   fs.stat(filePath, (err, st) => {
     if (err || !st.isFile()) {
       send(res, 404, 'Not found', { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -123,10 +166,48 @@ function serveFile(res, filePath) {
     }
     const ext = path.extname(filePath).toLowerCase();
     const type = MIME[ext] || 'application/octet-stream';
+    const cache =
+      ext === '.html' || ext === '.js' || ext === '.css' ? 'no-cache' : 'public, max-age=60';
+    const range = req && req.headers && req.headers.range;
+
+    if (range) {
+      const m = /^bytes=(\d*)-(\d*)$/.exec(range);
+      if (!m) {
+        res.writeHead(416, {
+          'Content-Range': `bytes */${st.size}`,
+          'Content-Type': 'text/plain',
+        });
+        res.end('Range Not Satisfiable');
+        return;
+      }
+      let start = m[1] === '' ? 0 : parseInt(m[1], 10);
+      let end = m[2] === '' ? st.size - 1 : parseInt(m[2], 10);
+      if (Number.isNaN(start) || Number.isNaN(end) || start > end || start >= st.size) {
+        res.writeHead(416, {
+          'Content-Range': `bytes */${st.size}`,
+          'Content-Type': 'text/plain',
+        });
+        res.end('Range Not Satisfiable');
+        return;
+      }
+      end = Math.min(end, st.size - 1);
+      const chunk = end - start + 1;
+      res.writeHead(206, {
+        'Content-Type': type,
+        'Content-Length': chunk,
+        'Content-Range': `bytes ${start}-${end}/${st.size}`,
+        'Accept-Ranges': 'bytes',
+        'Cache-Control': cache,
+      });
+      fs.createReadStream(filePath, { start, end }).pipe(res);
+      return;
+    }
+
     res.writeHead(200, {
       'Content-Type': type,
       'Content-Length': st.size,
-      'Cache-Control': ext === '.html' || ext === '.js' || ext === '.css' ? 'no-cache' : 'public, max-age=60',
+      'Accept-Ranges': 'bytes',
+      'Cache-Control': cache,
     });
     fs.createReadStream(filePath).pipe(res);
   });
@@ -146,7 +227,7 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
-      serveFile(res, path.join(PUBLIC, 'index.html'));
+      serveFile(req, res, path.join(PUBLIC, 'index.html'));
       return;
     }
 
@@ -182,6 +263,16 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'GET' && pathname === '/favicon.ico') {
+      const ico = path.join(PUBLIC, 'favicon.svg');
+      if (fs.existsSync(ico)) {
+        serveFile(req, res, ico);
+        return;
+      }
+      send(res, 204, '');
+      return;
+    }
+
     if (pathname.startsWith('/assets/')) {
       const rel = pathname.slice('/assets/'.length);
       const filePath = safeJoin(ASSETS, rel);
@@ -189,7 +280,7 @@ const server = http.createServer(async (req, res) => {
         send(res, 403, 'Forbidden', { 'Content-Type': 'text/plain' });
         return;
       }
-      serveFile(res, filePath);
+      serveFile(req, res, filePath);
       return;
     }
 
@@ -200,7 +291,7 @@ const server = http.createServer(async (req, res) => {
         send(res, 403, 'Forbidden', { 'Content-Type': 'text/plain' });
         return;
       }
-      serveFile(res, filePath);
+      serveFile(req, res, filePath);
       return;
     }
 

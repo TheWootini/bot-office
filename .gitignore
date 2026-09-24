@@ -9,3 +9,14 @@ webhook*
 .secret*
 tmp/
 .downloads/
+.venv/
+tmp-cutout/
+tmp-frames/
+# local / interim
+test-shots/
+tmp-cutout-log.txt
+public/alpha-test.html
+assets/game-artist-*.mp4
+assets/game-maker-*.mp4
+assets/helen-*.mp4
+assets/cutout/*.webm

@@ -152,6 +152,8 @@ function createCharElement(ch) {
     <div class="bubble" aria-live="polite"></div>
     <div class="char-inner">
       <div class="sprite">
+        <div class="layer media-a" data-layer="a"></div>
+        <div class="layer media-b" data-layer="b"></div>
         <div class="placeholder">
           <div class="placeholder-face">
             <span class="initials">${escapeHtml(ch.initials || '?')}</span>
@@ -204,70 +206,226 @@ function setMode(node, mode) {
   applyVisual(node);
 }
 
-function clearMedia(sprite) {
-  sprite.querySelectorAll('img, video').forEach((n) => n.remove());
-}
+const CROSSFADE_MS = 300;
 
-function resolveVideoSrc(assets, mode) {
-  if (!assets) return null;
-  if (mode === 'walk' && assets.walk) return assets.walk;
-  if ((mode === 'work' || mode === 'sit') && (assets.work || assets.sit)) return assets.work || assets.sit;
-  if (mode === 'talk' && assets.talk) return assets.talk;
-  if (mode === 'idle' && assets.idle) return assets.idle;
-  if (mode === 'highfive' && assets['movie-highfive']) return assets['movie-highfive'];
-  if (mode === 'celebrate' && assets['movie-highfive']) return assets['movie-highfive'];
+function mediaKindFromSrc(src) {
+  if (!src || typeof src !== 'string') return null;
+  const lower = src.split('?')[0].toLowerCase();
+  if (/\.(webp|png|jpe?g)$/.test(lower)) return 'still';
+  if (/\.(webm|mp4)$/.test(lower)) return 'video';
   return null;
 }
 
-function applyVisual(node) {
-  const { el, data, mode } = node;
-  const sprite = el.querySelector('.sprite');
-  const placeholder = sprite.querySelector('.placeholder');
-  const assets = data.assets || {};
+function resolveMediaSrc(assets, mode) {
+  if (!assets) return { kind: null, src: null };
+  const cut = assets.cutout || {};
+  const pick = (key) => cut[key] || assets[key] || null;
 
-  const videoSrc = resolveVideoSrc(assets, mode);
-  const stillSrc = assets.still || null;
+  let src = null;
+  if (mode === 'walk' && pick('walk')) src = pick('walk');
+  else if ((mode === 'work' || mode === 'sit') && (pick('work') || assets.sit)) {
+    src = pick('work') || assets.sit;
+  } else if (mode === 'talk' && pick('talk')) src = pick('talk');
+  else if (mode === 'idle' && pick('idle')) src = pick('idle');
+  else if ((mode === 'highfive' || mode === 'celebrate') && pick('movie-highfive')) {
+    src = pick('movie-highfive');
+  }
 
-  clearMedia(sprite);
+  if (src) {
+    const kind = mediaKindFromSrc(src) || 'video';
+    return { kind, src };
+  }
 
-  if (videoSrc) {
+  const still = cut.still || assets.still || null;
+  if (still) return { kind: 'still', src: still };
+  return { kind: null, src: null };
+}
+
+function isCutoutUrl(src) {
+  return typeof src === 'string' && src.includes('/assets/cutout/');
+}
+
+function ensureLayers(sprite) {
+  let a = sprite.querySelector('.media-a');
+  let b = sprite.querySelector('.media-b');
+  if (!a) {
+    a = document.createElement('div');
+    a.className = 'layer media-a';
+    a.dataset.layer = 'a';
+    sprite.insertBefore(a, sprite.firstChild);
+  }
+  if (!b) {
+    b = document.createElement('div');
+    b.className = 'layer media-b';
+    b.dataset.layer = 'b';
+    sprite.insertBefore(b, a.nextSibling);
+  }
+  return { a, b };
+}
+
+function clearLayer(layer) {
+  const media = layer.querySelector('video, img');
+  if (media && media.tagName === 'VIDEO') {
+    try {
+      media.pause();
+    } catch {
+      /* ignore */
+    }
+    media.removeAttribute('src');
+    media.load();
+  }
+  layer.innerHTML = '';
+}
+
+function mountIntoLayer(layer, kind, src, mode) {
+  clearLayer(layer);
+  if (kind === 'video') {
     const v = document.createElement('video');
-    v.src = videoSrc;
+    v.src = src;
     v.muted = true;
     v.loop = mode !== 'highfive' && mode !== 'celebrate';
     v.playsInline = true;
     v.autoplay = true;
     v.setAttribute('playsinline', '');
-    v.addEventListener('error', () => {
-      v.remove();
-      if (stillSrc) showStill(sprite, placeholder, stillSrc);
-      else if (placeholder) placeholder.hidden = false;
-    });
-    if (placeholder) placeholder.hidden = true;
-    sprite.appendChild(v);
-    v.play().catch(() => {});
-    return;
+    v.setAttribute('muted', '');
+    layer.appendChild(v);
+    return v;
   }
-
-  if (stillSrc) {
-    showStill(sprite, placeholder, stillSrc);
-    return;
+  if (kind === 'still') {
+    const img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    img.draggable = false;
+    layer.appendChild(img);
+    return img;
   }
-
-  if (placeholder) placeholder.hidden = false;
+  return null;
 }
 
-function showStill(sprite, placeholder, src) {
-  const img = document.createElement('img');
-  img.src = src;
-  img.alt = '';
-  img.draggable = false;
-  img.addEventListener('error', () => {
-    img.remove();
-    if (placeholder) placeholder.hidden = false;
+/** Resolves { ok, errored } once media has dimensions or fails. */
+function waitMediaReady(el) {
+  if (!el) return Promise.resolve({ ok: false, errored: true });
+  const hasDims = () => {
+    if (el.tagName === 'VIDEO') return el.videoWidth > 0;
+    return el.naturalWidth > 0;
+  };
+  if (hasDims()) return Promise.resolve({ ok: true, errored: false });
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (errored) => {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener('loadeddata', onOk);
+      el.removeEventListener('loadedmetadata', onOk);
+      el.removeEventListener('load', onOk);
+      el.removeEventListener('error', onErr);
+      resolve({ ok: hasDims(), errored: Boolean(errored) && !hasDims() });
+    };
+    const onOk = () => finish(false);
+    const onErr = () => finish(true);
+    if (el.tagName === 'VIDEO') {
+      el.addEventListener('loadeddata', onOk);
+      el.addEventListener('loadedmetadata', onOk);
+    } else {
+      el.addEventListener('load', onOk);
+    }
+    el.addEventListener('error', onErr);
+    setTimeout(() => finish(false), 1600);
   });
-  if (placeholder) placeholder.hidden = true;
-  sprite.appendChild(img);
+}
+
+function cutoutStillFallback(assets) {
+  if (!assets) return null;
+  const cut = assets.cutout || {};
+  return cut.still || null;
+}
+
+function anyStillFallback(assets) {
+  if (!assets) return null;
+  return cutoutStillFallback(assets) || assets.still || null;
+}
+
+function applyVisual(node, { force = false } = {}) {
+  const { el, data, mode } = node;
+  const sprite = el.querySelector('.sprite');
+  const placeholder = sprite.querySelector('.placeholder');
+  const assets = data.assets || {};
+
+  el.classList.toggle(
+    'has-cutout',
+    Boolean(assets.cutout && (assets.cutout.still || assets.cutout.idle)),
+  );
+
+  let media = resolveMediaSrc(assets, mode);
+  const nextKey = `${mode}|${media.kind}|${media.src || ''}`;
+
+  if (!force && node.visualKey === nextKey) return;
+  node.visualKey = nextKey;
+
+  const { a, b } = ensureLayers(sprite);
+  const active = sprite.querySelector('.layer.is-active');
+  const from = active || a;
+  const to = from === a ? b : a;
+
+  if (!media.src) {
+    clearLayer(a);
+    clearLayer(b);
+    a.classList.remove('is-active');
+    b.classList.remove('is-active');
+    sprite.classList.remove('is-cutout');
+    if (placeholder) placeholder.hidden = false;
+    return;
+  }
+
+  sprite.classList.toggle('is-cutout', isCutoutUrl(media.src));
+  // Keep placeholder visible until media actually has dimensions
+
+  const token = (node.visualToken = (node.visualToken || 0) + 1);
+
+  const tryMount = (kind, src, attempt) => {
+    const elMedia = mountIntoLayer(to, kind, src, mode);
+    waitMediaReady(elMedia).then(({ ok, errored }) => {
+      if (token !== node.visualToken) return;
+
+      if (!ok) {
+        // Fallback chain: cutout still png → non-cutout still
+        const cutStill = cutoutStillFallback(assets);
+        const anyStill = anyStillFallback(assets);
+        if (attempt === 0 && cutStill && cutStill !== src) {
+          sprite.classList.toggle('is-cutout', isCutoutUrl(cutStill));
+          node.visualKey = `${mode}|still|${cutStill}`;
+          tryMount('still', cutStill, 1);
+          return;
+        }
+        if (attempt <= 1 && anyStill && anyStill !== src && anyStill !== cutStill) {
+          sprite.classList.toggle('is-cutout', isCutoutUrl(anyStill));
+          node.visualKey = `${mode}|still|${anyStill}`;
+          tryMount('still', anyStill, 2);
+          return;
+        }
+        // Give up — show placeholder
+        clearLayer(to);
+        if (placeholder) placeholder.hidden = false;
+        sprite.classList.remove('is-cutout');
+        return;
+      }
+
+      if (elMedia && elMedia.tagName === 'VIDEO') {
+        elMedia.play().catch(() => {});
+      }
+      if (placeholder) placeholder.hidden = true;
+      to.classList.add('is-active');
+      from.classList.remove('is-active');
+
+      const settle = () => {
+        if (token !== node.visualToken) return;
+        if (from !== to) clearLayer(from);
+      };
+      setTimeout(settle, CROSSFADE_MS + 40);
+    });
+  };
+
+  tryMount(media.kind, media.src, 0);
 }
 
 function showBubble(node, text, ms = 3200) {
@@ -589,6 +747,8 @@ function mountCharacters(characters) {
       afterTalk: 'idle',
       inMeet: false,
       locked: false,
+      visualKey: null,
+      visualToken: 0,
     };
     state.nodes.set(ch.id, node);
     setPosition(node, desk.x + 8, desk.y + 10, { fast: true, walking: false, separate: false });

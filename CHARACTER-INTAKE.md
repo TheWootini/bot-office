@@ -29,6 +29,15 @@ Only describe the change. Examples: “sweater red”, “pirate hat”, “add 
 - [ ] talk  
 - [ ] walk  
 - [ ] movie-highfive (and any other movie beats)
+- [ ] transitions (when available): sit-down, stand-up, turn-left, turn-right  
+- [ ] cutouts: `scripts/make-cutouts.sh {id}` → `assets/cutout/{id}-*.webm` + `{id}-still.png`
+
+## Cutout + transition rules
+
+- Generate plates on solid cream `#F2DCBD`, same framing, feet planted, no room props (see `ANIMATION.md`).
+- Run rembg cutouts — **do not chromakey cream** (body paint matches the plate).
+- Until turn clips exist, walk L/R uses CSS `facing-left` (sprite mirror only).
+- Stage crossfades between modes; prefer cutout WebM/PNG when present.
 
 ## Behavior checklist
 
